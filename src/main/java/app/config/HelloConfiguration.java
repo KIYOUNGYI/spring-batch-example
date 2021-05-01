@@ -22,6 +22,7 @@ public class HelloConfiguration {
   private final JobBuilderFactory jobBuilderFactory;
   private final StepBuilderFactory stepBuilderFactory;
 
+  // 배치 실행단위
   @Bean
   public Job helloJob() {
     return jobBuilderFactory.get("helloJob")//스프링 배치를 실행 시킬 수 있는 키
@@ -29,7 +30,7 @@ public class HelloConfiguration {
         .start(this.helloStep())//최초 실행될 메서도
         .build();
   }
-
+  // Job 의 실행단위
   @Bean
   public Step helloStep() {
     return stepBuilderFactory.get("helloStep")
