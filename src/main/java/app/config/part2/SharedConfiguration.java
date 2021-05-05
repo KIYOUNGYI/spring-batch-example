@@ -33,8 +33,13 @@ public class SharedConfiguration {
         .build();
   }
 
-  private Step shareStep2() {
-    return stepBuilderFactory.get("shareStep")
+  /**
+   * 이전 스텝에서 저장했던 내역 꺼내기
+   * @return
+   */
+  @Bean
+  public Step shareStep2() {
+    return stepBuilderFactory.get("shareStep2")
         .tasklet(((contribution, chunkContext) -> {
           StepExecution stepExecution = contribution.getStepExecution();
           ExecutionContext stepExecutionContext = stepExecution.getExecutionContext();
@@ -48,6 +53,9 @@ public class SharedConfiguration {
         })).build();
   }
 
+  /**
+   * job 에서 job 이름, step 에서 step 이름, job parameter 등을 꺼내서 로그를 찍어보기.
+   */
   @Bean
   public Step shareStep() {
 

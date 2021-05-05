@@ -2,7 +2,6 @@ package app.config.part3;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,25 +19,42 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 
-//gradle bootRun --args='--job.name=itemReaderJob'
+/**
+ * <p> 설명 : flatItemReader <- 파일 아이템 읽는 스프링 배치에서 제공하는 것
+ * <p> 실행 명령어 $ gradle bootRun --args='--job.name=itemReaderJob2'
+ * <p> 정산 할 때 (ex> b2b) 종종 활용
+ */
+
 @Slf4j
 @RequiredArgsConstructor
 @Configuration
-public class ItemReaderConfiguration {
+public class ItemReaderConfiguration2 {
 
   private final StepBuilderFactory stepBuilderFactory;
   private final JobBuilderFactory jobBuilderFactory;
 
   @Bean
-  public Job itemReaderJob() throws Exception {
-    return this.jobBuilderFactory.get("itemReaderJob")
+  public Job itemReaderJob2() throws Exception {
+    return this.jobBuilderFactory.get("itemReaderJob2")
         .incrementer(new RunIdIncrementer())
-        .start(this.customItemReaderStep())
+        .start(this.csvFileStep())
         .build();
   }
 
+  @Bean
+  public Step csvFileStep() throws Exception {
+    return stepBuilderFactory.get("csvFileStep")
+        .<Person, Person>chunk(10)
+        .reader(this.csvFileItemReader())
+        .writer(itemWriter())
+        .build();
+
+  }
+
   private FlatFileItemReader<Person> csvFileItemReader() throws Exception {
+
     DefaultLineMapper<Person> lineMapper = new DefaultLineMapper<>();
+
     //person field 설정 (매핑하기 위해)
     DelimitedLineTokenizer tokenizer = new DelimitedLineTokenizer();
     tokenizer.setNames("id", "name", "age", "address");
@@ -66,15 +82,6 @@ public class ItemReaderConfiguration {
     return itemReader;
   }
 
-
-  private Step customItemReaderStep() {
-    return this.stepBuilderFactory.get("customItemReaderStep")
-        .<Person, Person>chunk(10)
-        .reader(new CustomItemReader<>(getItems()))
-//        .processor()
-        .writer(itemWriter())
-        .build();
-  }
 
   private ItemWriter<Person> itemWriter() {
     return items -> log.info(items.stream().map(Person::getName).collect(Collectors.joining(", ")));

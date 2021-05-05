@@ -7,6 +7,7 @@ import org.springframework.batch.item.NonTransientResourceException;
 import org.springframework.batch.item.ParseException;
 import org.springframework.batch.item.UnexpectedInputException;
 
+//자바 컬렉션 리스트를 ItemReader 로 처리하는 클래스
 public class CustomItemReader<T> implements ItemReader<T> {
 
   private final List<T> items;
