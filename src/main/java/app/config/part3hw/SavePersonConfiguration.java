@@ -1,0 +1,120 @@
+package app.config.part3hw;
+
+
+import app.domain.Person;
+import java.util.HashMap;
+import java.util.Map;
+import javax.persistence.EntityManagerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.JobScope;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.launch.support.RunIdIncrementer;
+import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.database.JpaItemWriter;
+import org.springframework.batch.item.database.builder.JpaItemWriterBuilder;
+import org.springframework.batch.item.file.FlatFileItemReader;
+import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
+import org.springframework.batch.item.file.mapping.DefaultLineMapper;
+import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
+import org.springframework.batch.item.support.CompositeItemWriter;
+import org.springframework.batch.item.support.builder.CompositeItemWriterBuilder;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ClassPathResource;
+
+//gradle bootRun --args='--job.name=savePersonJob -allow_duplicate=false'
+//gradle bootRun --args='--job.name=savePersonJob -allow_duplicate=true'
+@Configuration
+@Slf4j
+@RequiredArgsConstructor
+public class SavePersonConfiguration {
+
+  private final JobBuilderFactory jobBuilderFactory;
+  private final StepBuilderFactory stepBuilderFactory;
+  private final EntityManagerFactory entityManagerFactory;
+  public static Map<String, String> duplicate = new HashMap<>();
+
+  @Bean
+  public Job savePersonJob() throws Exception {
+    return this.jobBuilderFactory.get("savePersonJob")
+        .incrementer(new RunIdIncrementer())
+        .start(this.savePersonStep(null))
+        .build();
+  }
+
+  @Bean
+  @JobScope
+  public Step savePersonStep(@Value("#{jobParameters[allow_duplicate]}") String allowDuplicate) throws Exception {
+    return stepBuilderFactory.get("savePersonStep")
+        .<Person, Person>chunk(10)
+        .reader(this.itemReader())
+        .processor(new DuplicateValidationProcessor<>(Person::getName, Boolean.parseBoolean(allowDuplicate)))
+        .writer(jpaPersonWriter())
+        .build();
+  }
+
+
+  private ItemWriter<Person> jpaPersonWriter() throws Exception {
+    JpaItemWriter<Person> jpaItemWriter = new JpaItemWriterBuilder<Person>()
+        .entityManagerFactory(entityManagerFactory)
+        .usePersist(true)//사실, 생성자에 아이디 값이 안들어가면 셀렉 절은 아나가고, 인서트만 나간다.
+        .build();
+    jpaItemWriter.afterPropertiesSet();
+
+    ItemWriter<Person> logItemWriter = items -> log.info("person size : {} ", items.size());
+
+    CompositeItemWriter<Person> compositeItemWriter = new CompositeItemWriterBuilder<Person>()
+        .delegates(jpaItemWriter, logItemWriter)//delegate 순서 중
+        .build();
+
+    compositeItemWriter.afterPropertiesSet();
+
+    return compositeItemWriter;
+
+  }
+
+
+  private FlatFileItemReader<Person> itemReader() throws Exception {
+
+    DefaultLineMapper<Person> lineMapper = new DefaultLineMapper<>();
+
+    //person field 설정 (매핑하기 위해)
+    DelimitedLineTokenizer tokenizer = new DelimitedLineTokenizer();
+    tokenizer.setNames("name", "age", "address");
+    lineMapper.setLineTokenizer(tokenizer);
+
+    lineMapper.setFieldSetMapper(fieldSet -> {
+      String name = fieldSet.readString("name");
+      String age = fieldSet.readString("age");
+      String address = fieldSet.readString("address");
+
+      return new Person(name, age, address);
+    });
+
+    FlatFileItemReader<Person> itemReader = new FlatFileItemReaderBuilder<Person>()
+        .name("csvFileItemReader")
+        .encoding("UTF-8")
+        .resource(new ClassPathResource("test.csv"))
+        .linesToSkip(1)//첫번째 row 는 스킵 (데이터가 아니니)
+        .lineMapper(lineMapper)
+        .build();
+
+    itemReader.afterPropertiesSet();
+
+    return itemReader;
+  }
+
+  private ItemWriter<Person> itemWriter() {
+    return items -> items.forEach(x -> log.info("저는 {} 입니다.", x.getName()));
+  }
+
+//  private ItemWriter<Person> itemWriter() {
+//    return items -> log.info(items.stream().map(Person::getName).collect(Collectors.joining(", ")));
+//  }
+
+}
