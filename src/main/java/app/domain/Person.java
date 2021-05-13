@@ -1,15 +1,18 @@
 package app.domain;
 
+import java.util.Objects;
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
 import javax.persistence.Id;
+import javax.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Getter
 @NoArgsConstructor
 @Entity
+//@Table(name = "person",schema = "spring_batch")
 public class Person {
 
   @Id
@@ -29,5 +32,9 @@ public class Person {
     this.name = name;
     this.age = age;
     this.address = address;
+  }
+
+  public boolean isNotEmptyName() {
+    return Objects.nonNull(this.name) && !name.isEmpty();
   }
 }

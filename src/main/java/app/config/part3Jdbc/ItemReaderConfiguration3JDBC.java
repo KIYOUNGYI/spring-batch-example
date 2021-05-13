@@ -1,6 +1,6 @@
 package app.config.part3Jdbc;
 
-import app.config.part3.Person;
+import app.domain.Person;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;

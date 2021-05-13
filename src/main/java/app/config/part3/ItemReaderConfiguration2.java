@@ -1,5 +1,6 @@
 package app.config.part3;
 
+import app.domain.Person;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;

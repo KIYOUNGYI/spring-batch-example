@@ -1,18 +1,20 @@
 package app.config.part3hw;
 
 
+import app.config.part3hw.SavePersonListener.SavePersonAnnotationJobExecutionListener;
+import app.config.part3hw.SavePersonListener.SavePersonJobExecutionListener;
 import app.domain.Person;
-import java.util.HashMap;
-import java.util.Map;
 import javax.persistence.EntityManagerFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.cache.spi.support.AbstractReadWriteAccess.Item;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.JobScope;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
+import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.JpaItemWriter;
 import org.springframework.batch.item.database.builder.JpaItemWriterBuilder;
@@ -20,7 +22,9 @@ import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
 import org.springframework.batch.item.file.mapping.DefaultLineMapper;
 import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
+import org.springframework.batch.item.support.CompositeItemProcessor;
 import org.springframework.batch.item.support.CompositeItemWriter;
+import org.springframework.batch.item.support.builder.CompositeItemProcessorBuilder;
 import org.springframework.batch.item.support.builder.CompositeItemWriterBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -37,13 +41,29 @@ public class SavePersonConfiguration {
   private final JobBuilderFactory jobBuilderFactory;
   private final StepBuilderFactory stepBuilderFactory;
   private final EntityManagerFactory entityManagerFactory;
-  public static Map<String, String> duplicate = new HashMap<>();
 
   @Bean
-  public Job savePersonJob() throws Exception {
-    return this.jobBuilderFactory.get("savePersonJob")
+  public Job savePersonJob2() throws Exception {
+    return this.jobBuilderFactory.get("savePersonJob2")
         .incrementer(new RunIdIncrementer())
         .start(this.savePersonStep(null))
+        .listener(new SavePersonJobExecutionListener())
+        .listener(new SavePersonAnnotationJobExecutionListener())
+        .build();
+  }
+
+  @Bean
+  @JobScope
+  public Step savePersonStepBackup(@Value("#{jobParameters[allow_duplicate]}") String allowDuplicate) throws Exception {
+    return stepBuilderFactory.get("savePersonStep")
+        .<Person, Person>chunk(10)
+        .reader(this.itemReader())
+        .processor(new DuplicateValidationProcessor<>(Person::getName, Boolean.parseBoolean(allowDuplicate)))
+        .writer(itemWriter())
+        .listener(new SavePersonListener.SavePersonAnnotationStepExecutionListener())
+        .faultTolerant()
+        .skip(NotFoundNameException.class)
+        .skipLimit(2)
         .build();
   }
 
@@ -53,9 +73,34 @@ public class SavePersonConfiguration {
     return stepBuilderFactory.get("savePersonStep")
         .<Person, Person>chunk(10)
         .reader(this.itemReader())
-        .processor(new DuplicateValidationProcessor<>(Person::getName, Boolean.parseBoolean(allowDuplicate)))
+        .processor(itemProcessor(allowDuplicate))
         .writer(jpaPersonWriter())
+        .listener(new SavePersonListener.SavePersonAnnotationStepExecutionListener())
+        .faultTolerant()
+        .skip(NotFoundNameException.class)
+        .skipLimit(2)
         .build();
+  }
+
+  private ItemProcessor<? super Person, ? extends Person> itemProcessor(String allowDuplicate) throws Exception {
+
+    DuplicateValidationProcessor<Person> duplicateValidationProcessor
+        = new DuplicateValidationProcessor<>(Person::getName, Boolean.parseBoolean(allowDuplicate));
+
+    ItemProcessor<Person, Person> validationProcessor = item -> {
+      if (item.isNotEmptyName()) {
+        return item;
+      }
+      throw new NotFoundNameException();
+    };
+
+    CompositeItemProcessor<Person, Person> itemProcessor = new CompositeItemProcessorBuilder<Person, Person>()
+        .delegates(validationProcessor, duplicateValidationProcessor)
+        .build();
+
+    itemProcessor.afterPropertiesSet();
+
+    return itemProcessor;
   }
 
 
