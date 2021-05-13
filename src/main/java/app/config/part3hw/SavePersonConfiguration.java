@@ -32,7 +32,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 
 //gradle bootRun --args='--job.name=savePersonJob -allow_duplicate=false'
-//gradle bootRun --args='--job.name=savePersonJob -allow_duplicate=true'
+//gradle bootRun --args='--job.name=savePersonJob2 -allow_duplicate=true'
+//gradle bootRun --args='--job.name=savePersonJob3 -allow_duplicate=true'  <- recovery call back 동작하는지 확인
 @Configuration
 @Slf4j
 @RequiredArgsConstructor
@@ -43,10 +44,21 @@ public class SavePersonConfiguration {
   private final EntityManagerFactory entityManagerFactory;
 
   @Bean
+  public Job savePersonJob3() throws Exception {
+    return this.jobBuilderFactory.get("savePersonJob3")
+        .incrementer(new RunIdIncrementer())
+        .start(this.savePersonStepV3(null))
+        .listener(new SavePersonJobExecutionListener())
+        .listener(new SavePersonAnnotationJobExecutionListener())
+        .build();
+  }
+
+
+  @Bean
   public Job savePersonJob2() throws Exception {
     return this.jobBuilderFactory.get("savePersonJob2")
         .incrementer(new RunIdIncrementer())
-        .start(this.savePersonStep(null))
+        .start(this.savePersonStepV2(null))
         .listener(new SavePersonJobExecutionListener())
         .listener(new SavePersonAnnotationJobExecutionListener())
         .build();
@@ -69,7 +81,7 @@ public class SavePersonConfiguration {
 
   @Bean
   @JobScope
-  public Step savePersonStep(@Value("#{jobParameters[allow_duplicate]}") String allowDuplicate) throws Exception {
+  public Step savePersonStepV2(@Value("#{jobParameters[allow_duplicate]}") String allowDuplicate) throws Exception {
     return stepBuilderFactory.get("savePersonStep")
         .<Person, Person>chunk(10)
         .reader(this.itemReader())
@@ -81,6 +93,44 @@ public class SavePersonConfiguration {
         .skipLimit(2)
         .build();
   }
+
+  @Bean
+  @JobScope
+  public Step savePersonStepV3(@Value("#{jobParameters[allow_duplicate]}") String allowDuplicate) throws Exception {
+    return stepBuilderFactory.get("savePersonStep")
+        .<Person, Person>chunk(10)
+        .reader(this.itemReader())
+        .processor(itemProcessorV3(allowDuplicate))
+        .writer(jpaPersonWriter())
+        .listener(new SavePersonListener.SavePersonAnnotationStepExecutionListener())
+        .faultTolerant()
+        .skip(NotFoundNameException.class)
+        .skipLimit(2)
+        .build();
+  }
+
+
+  private ItemProcessor<? super Person, ? extends Person> itemProcessorV3(String allowDuplicate) throws Exception {
+
+    DuplicateValidationProcessor<Person> duplicateValidationProcessor
+        = new DuplicateValidationProcessor<>(Person::getName, Boolean.parseBoolean(allowDuplicate));
+
+    ItemProcessor<Person, Person> validationProcessor = item -> {
+      if (item.isNotEmptyName()) {
+        return item;
+      }
+      throw new NotFoundNameException();
+    };
+
+    CompositeItemProcessor<Person, Person> itemProcessor = new CompositeItemProcessorBuilder<Person, Person>()
+        .delegates(new PersonValidateProcessor(),validationProcessor, duplicateValidationProcessor)
+        .build();
+
+    itemProcessor.afterPropertiesSet();
+
+    return itemProcessor;
+  }
+
 
   private ItemProcessor<? super Person, ? extends Person> itemProcessor(String allowDuplicate) throws Exception {
 
