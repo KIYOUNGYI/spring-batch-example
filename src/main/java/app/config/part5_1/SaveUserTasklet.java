@@ -1,4 +1,4 @@
-package app.config.performance;
+package app.config.part5_1;
 
 import app.config.part4.User;
 import app.config.part4.UserRepository;
@@ -18,7 +18,7 @@ import org.springframework.batch.repeat.RepeatStatus;
 @RequiredArgsConstructor
 public class SaveUserTasklet implements Tasklet {
 
-  private final int SIZE = 1_000;
+  private final int SIZE = 10_000;
   private final UserRepository userRepository;
 
   @Override

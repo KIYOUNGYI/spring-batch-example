@@ -11,6 +11,7 @@ import javax.persistence.CascadeType;
 import javax.persistence.Entity;
 import javax.persistence.EnumType;
 import javax.persistence.Enumerated;
+import javax.persistence.FetchType;
 import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
 import javax.persistence.JoinColumn;
@@ -34,7 +35,7 @@ public class User {
   private Level level = Level.NORMAL;
 
   //  private int totalAmount;
-  @OneToMany(cascade = CascadeType.PERSIST)//user가 저장되면서 orders 도 저장될 수 있도록 설정
+  @OneToMany(cascade = CascadeType.PERSIST, fetch = FetchType.EAGER)//user가 저장되면서 orders 도 저장될 수 있도록 설정
   @JoinColumn(name = "user_id")
   private List<Orders> orders = new ArrayList<>();
 
