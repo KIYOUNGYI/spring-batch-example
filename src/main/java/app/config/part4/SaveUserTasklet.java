@@ -1,5 +1,7 @@
 package app.config.part4;
 
+import app.config.part5.Orders;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -27,42 +29,101 @@ public class SaveUserTasklet implements Tasklet {
     return RepeatStatus.FINISHED;
   }
 
-  //300명이 승급 대상
   private List<User> createUsers() {
     List<User> users = new ArrayList<>();
 
     for (int i = 0; i < 100; i++) {
       users.add(User.builder()
+          .orders(Collections.singletonList(
+              Orders.builder()
+                  .amount(1_000)
+                  .createdDate(LocalDate.of(2021, 5, 12))
+                  .itemName("item " + i)
+                  .build()))
           .userName("test username " + i)
-          .totalAmount(1_000)
           .build()
       );
     }
 
     for (int i = 100; i < 200; i++) {
       users.add(User.builder()
+          .orders(Collections.singletonList(
+              Orders.builder()
+                  .amount(200_000)
+                  .createdDate(LocalDate.of(2021, 5, 13))
+                  .itemName("item " + i)
+                  .build()))
           .userName("test username " + i)
-          .totalAmount(200_000)//silver
           .build()
       );
     }
 
     for (int i = 200; i < 300; i++) {
       users.add(User.builder()
+          .orders(Collections.singletonList(
+              Orders.builder()
+                  .amount(300_000)
+                  .createdDate(LocalDate.of(2021, 5, 14))
+                  .itemName("item " + i)
+                  .build()))
           .userName("test username " + i)
-          .totalAmount(300_000)//gold
           .build()
       );
     }
 
     for (int i = 300; i < 400; i++) {
       users.add(User.builder()
+          .orders(Collections.singletonList(
+              Orders.builder()
+                  .amount(500_000)
+                  .createdDate(LocalDate.of(2021, 5, 15))
+                  .itemName("item " + i)
+                  .build()))
           .userName("test username " + i)
-          .totalAmount(500_000)//gold
           .build()
       );
     }
 
     return users;
   }
+
+//  version 1
+//  //300명이 승급 대상
+//  private List<User> createUsers() {
+//    List<User> users = new ArrayList<>();
+//
+//    for (int i = 0; i < 100; i++) {
+//      users.add(User.builder()
+//          .userName("test username " + i)
+//          .totalAmount(1_000)
+//          .build()
+//      );
+//    }
+//
+//    for (int i = 100; i < 200; i++) {
+//      users.add(User.builder()
+//          .userName("test username " + i)
+//          .totalAmount(200_000)//silver
+//          .build()
+//      );
+//    }
+//
+//    for (int i = 200; i < 300; i++) {
+//      users.add(User.builder()
+//          .userName("test username " + i)
+//          .totalAmount(300_000)//gold
+//          .build()
+//      );
+//    }
+//
+//    for (int i = 300; i < 400; i++) {
+//      users.add(User.builder()
+//          .userName("test username " + i)
+//          .totalAmount(500_000)//gold
+//          .build()
+//      );
+//    }
+//
+//    return users;
+//  }
 }
