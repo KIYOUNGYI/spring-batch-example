@@ -43,7 +43,7 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.task.TaskExecutor;
 
 
-//gradle bootRun --args='-date=2021-05 --job.name=userJob1' <- user 저장하는 명령어
+//gradle bootRun --args='-date=2021-05 --job.name=asyncUserJob' <- user 저장하는 명령어
 @Slf4j
 @RequiredArgsConstructor
 @Configuration
