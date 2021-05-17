@@ -36,6 +36,9 @@ import org.springframework.core.io.FileSystemResource;
 
 //gradle bootRun --args='--job.name=userJob' <- user 저장하는 명령어
 
+//  ./gradlew clean jar build -x test
+//  build/libs 하위에 jar 파일 생성됨
+//  java -jar spring-batch-example.jar  --job.name=userJob -date=2021-05 -path=xxxx
 //gradle bootRun --args='-date=2021-05 --job.name=userJob' <- user 저장하는 명령어
 @Slf4j
 @RequiredArgsConstructor
@@ -51,16 +54,16 @@ public class UserConfiguration {
 
   @Bean
   @JobScope
-  public Step orderStatisticsStep(@Value("#{jobParameters[date]}") String date) throws Exception {
+  public Step orderStatisticsStep(@Value("#{jobParameters[date]}") String date, @Value("#{jobParameters[path]}")String path) throws Exception {
     return this.stepBuilderFactory.get("orderStatisticsStep")
         .<OrderStatistics, OrderStatistics>chunk(100)
         .reader(orderStatisticsItemReader(date))
-        .writer(orderStatisticsItemWriter(date))
+        .writer(orderStatisticsItemWriter(date,path))
         .build();
   }
 
   //reader 에서 읽은 데이터 기준으로 파일을 생성해야 한다.
-  private ItemWriter<? super OrderStatistics> orderStatisticsItemWriter(String date) throws Exception{
+  private ItemWriter<? super OrderStatistics> orderStatisticsItemWriter(String date,String path) throws Exception{
 
     YearMonth yearMonth = YearMonth.parse(date);
 
@@ -74,7 +77,8 @@ public class UserConfiguration {
     lineAggregator.setFieldExtractor(fieldExtractor);
 
     FlatFileItemWriter<OrderStatistics> itemWriter = new FlatFileItemWriterBuilder<OrderStatistics>()
-        .resource(new FileSystemResource("output/" + fileName))
+//        .resource(new FileSystemResource("output/" + fileName))
+        .resource(new FileSystemResource(path + fileName))
         .lineAggregator(lineAggregator)
         .name("orderStatisticsItemWriter")
         .encoding("UTF-8")
@@ -128,7 +132,7 @@ public class UserConfiguration {
         .listener(new LevelUpJobExecutionListener(userRepository))//로깅
         .next(new JobParameterDecide("date"))//파라미터 검사
         .on(JobParameterDecide.CONTINUE.getName())//continue 이면
-        .to(this.orderStatisticsStep(null))//통계)
+        .to(this.orderStatisticsStep(null,null))//통계)
         .build()
         .build();
   }
