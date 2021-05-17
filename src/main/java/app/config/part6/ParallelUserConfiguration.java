@@ -11,7 +11,6 @@ import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.Future;
 import javax.persistence.EntityManagerFactory;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
@@ -21,12 +20,11 @@ import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.JobScope;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
-import org.springframework.batch.core.configuration.annotation.StepScope;
+import org.springframework.batch.core.job.builder.FlowBuilder;
+import org.springframework.batch.core.job.flow.Flow;
+import org.springframework.batch.core.job.flow.support.SimpleFlow;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
-import org.springframework.batch.core.partition.PartitionHandler;
-import org.springframework.batch.core.partition.support.TaskExecutorPartitionHandler;
-import org.springframework.batch.integration.async.AsyncItemProcessor;
-import org.springframework.batch.integration.async.AsyncItemWriter;
+import org.springframework.batch.core.step.tasklet.TaskletStep;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
@@ -45,14 +43,14 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.task.TaskExecutor;
 
-//slave 에서 async 로 동작하는 꼴
-//gradle bootRun --args='-date=2021-05 --job.name=partitionUserJobV2' <- user 저장하는 명령어
+
+//gradle bootRun --args='-date=2021-05 --job.name=userJob1' <- user 저장하는 명령어
 @Slf4j
 @RequiredArgsConstructor
 @Configuration
-public class PartitionUserConfigurationV2 {
+public class ParallelUserConfiguration {
 
-  private final String JOB_NAME = "partitionUserJobV2";
+  private final String JOB_NAME = "parallelUserJob";
   private final int CHUNK = 1000;
   private final StepBuilderFactory stepBuilderFactory;
   private final JobBuilderFactory jobBuilderFactory;
@@ -61,22 +59,48 @@ public class PartitionUserConfigurationV2 {
   private final DataSource dataSource;
   private final TaskExecutor taskExecutor;
 
+  @Bean(JOB_NAME + "_saveUserFlow")
+  public Flow saveUserFlow() {
+    TaskletStep saveUserStep = this.stepBuilderFactory.get(JOB_NAME + "_saveUserStep")
+        .tasklet(new SaveUserTasklet(userRepository))
+        .build();
+
+    return new FlowBuilder<SimpleFlow>(JOB_NAME + "_saveUserFlow").start(saveUserStep).build();
+  }
+
+
   @Bean(JOB_NAME)
   public Job userJob() throws Exception {
     return this.jobBuilderFactory.get(JOB_NAME)
-        .incrementer(new RunIdIncrementer())
-        .start(this.saveUserStep())//저장하고
-        .next(this.userLevelUpManagerStep())//등급 올리고
         .listener(new LevelUpJobExecutionListener(userRepository))//로깅
-        .next(new JobParameterDecide("date"))//파라미터 검사
-        .on(JobParameterDecide.CONTINUE.getName())//continue 이면
-        .to(this.orderStatisticsStep(null))//통계)
+        .incrementer(new RunIdIncrementer())
+        .start(saveUserFlow())//저장하고
+        .next(this.splitFlow(null))//등급 올리고
         .build()
         .build();
   }
 
-  @Bean(JOB_NAME + "_orderStatisticsStep")
+  //핵심
+  @Bean(JOB_NAME+"_splitFlow")
   @JobScope
+  public Flow splitFlow(@Value("#{jobParameters[date]}") String date) throws Exception {
+
+    Flow userLevelUpFlow = new FlowBuilder<SimpleFlow>(JOB_NAME+"_userLevelUpFlow")
+        .start(userLevelUpStep())
+        .build();
+
+    return new FlowBuilder<SimpleFlow>(JOB_NAME+"_splitFlow")
+        .split(this.taskExecutor)
+        .add(userLevelUpFlow, orderStatisticsFlow(date)).build();
+  }
+
+  private Flow orderStatisticsFlow(String date) throws Exception {
+    return new FlowBuilder<SimpleFlow>(JOB_NAME+"_orderStatisticsFlow")
+        .start(new JobParameterDecide("date"))//파라미터 검사
+        .on(JobParameterDecide.CONTINUE.getName())//continue 이면
+        .to(this.orderStatisticsStep(date)).build();//통계))
+  }
+
   public Step orderStatisticsStep(@Value("#{jobParameters[date]}") String date) throws Exception {
     return this.stepBuilderFactory.get(JOB_NAME + "_orderStatisticsStep")
         .<OrderStatistics, OrderStatistics>chunk(CHUNK)
@@ -146,62 +170,38 @@ public class PartitionUserConfigurationV2 {
   }
 
 
-  @Bean(JOB_NAME + "_saveUserStep")
-  public Step saveUserStep() {
-    return this.stepBuilderFactory.get(JOB_NAME + "_saveUserStep")
-        .tasklet(new SaveUserTasklet(userRepository))
+  @Bean(JOB_NAME + "_userLevelUpStep")
+  public Step userLevelUpStep() throws Exception {
+    return stepBuilderFactory.get(JOB_NAME + "_userLevelUpStep")
+        .<User, User>chunk(CHUNK)
+        .reader(itemReader())
+        .processor(itemProcessor())
+        .writer(itemWriter())
         .build();
   }
 
-
-  private AsyncItemWriter<User> itemWriter() {
-    ItemWriter<User> itemWriter =
-        users -> {
-          users.forEach(x -> {
-                x.levelUp();
-                userRepository.save(x);
-              }
-          );
-        };
-    AsyncItemWriter<User> asyncItemWriter = new AsyncItemWriter<>();
-    asyncItemWriter.setDelegate(itemWriter);
-
-    return asyncItemWriter;
-  }
-
-  private AsyncItemProcessor<User, User> itemProcessor() {
-
-    ItemProcessor<User, User> itemProcessor =
-        user -> {
-          if (user.availableLevelUp()) {
-            return user;
+  private ItemWriter<? super User> itemWriter() {
+    return users -> {
+      users.forEach(x -> {
+            x.levelUp();
+            userRepository.save(x);
           }
-          return null;
-        };
-
-    AsyncItemProcessor<User, User> asyncItemProcessor = new AsyncItemProcessor<>();
-    asyncItemProcessor.setDelegate(itemProcessor);
-    asyncItemProcessor.setTaskExecutor(this.taskExecutor);
-
-    return asyncItemProcessor;
+      );
+    };
   }
 
+  private ItemProcessor<? super User, ? extends User> itemProcessor() {
+    return user -> {
+      if (user.availableLevelUp()) {
+        return user;
+      }
+      return null;
+    };
+  }
 
-  //itemReader -> 에러남
-  //스텝스코프는 프록시로 설정되기 때문에 정확하게 어떤 걸 쓰는지 명시해야 한다.
-  @Bean(JOB_NAME+"_itemReader")
-  @StepScope
-  public JpaPagingItemReader<? extends User> itemReader(
-      @Value("#{stepExecutionContext[minId]}") Long minId,
-      @Value("#{stepExecutionContext[maxId]}")Long maxId) throws Exception {
-
-    Map<String, Object> parameters = new HashMap<>();
-    parameters.put("minId",minId);
-    parameters.put("maxId",maxId);
-
+  private ItemReader<? extends User> itemReader() throws Exception {
     JpaPagingItemReader<User> itemReader = new JpaPagingItemReaderBuilder<User>()
-        .queryString("select u from User u where u.id between :minId and :maxId")
-        .parameterValues(parameters)
+        .queryString("select u from User u")
         .entityManagerFactory(entityManagerFactory)
         .pageSize(CHUNK)
         .name(JOB_NAME + "_userItemReader")
@@ -209,33 +209,5 @@ public class PartitionUserConfigurationV2 {
 
     itemReader.afterPropertiesSet();
     return itemReader;
-  }
-
-  @Bean(JOB_NAME + "_userLevelUpStep")
-  public Step userLevelUpStep() throws Exception {
-    return stepBuilderFactory.get(JOB_NAME + "_userLevelUpStep")
-        .<User, Future<User>>chunk(CHUNK)
-        .reader(itemReader(null,null))
-        .processor(itemProcessor())
-        .writer(itemWriter())
-        .build();
-  }
-
-  @Bean(JOB_NAME + "_userLevelUpStep.manager")
-  public Step userLevelUpManagerStep() throws Exception {
-    return this.stepBuilderFactory.get(JOB_NAME + "_userLevelup.manager")
-        .partitioner(JOB_NAME + "_userLevelup", new UserLevelUpPartitioner(userRepository))
-        .step(userLevelUpStep())//slave
-        .partitionHandler(taskExecutorPartitionHandler())
-        .build();
-  }
-
-  @Bean(JOB_NAME + "_taskExecutorPartitionHandler")
-  public PartitionHandler taskExecutorPartitionHandler() throws Exception {
-    TaskExecutorPartitionHandler handler = new TaskExecutorPartitionHandler();
-
-    handler.setStep(userLevelUpStep());
-    handler.setGridSize(8);
-    return handler;
   }
 }
